@@ -1,7 +1,8 @@
-from flask import Flask
 from flask import redirect, Response
+from flask import Flask
 import urllib2
 import json
+from google.appengine.api import urlfetch
 
 app = Flask(__name__)
 app.config['DEBUG'] = True
@@ -12,7 +13,7 @@ app.config['DEBUG'] = True
 
 @app.route('/')
 def hello():
-    return 'Hello World!'
+    return 'Hello World v4!'
 
 
 @app.route('/latest')
@@ -24,23 +25,34 @@ def latest():
         request = urllib2.Request(url, headers={"Accept": "application/json"})
         contents = urllib2.urlopen(request).read()
         builds = json.loads(contents)
-        for build in builds:
-            build_url = build["build_url"]
-            short_vcs_revision = build["vcs_revision"][:7]  # 7 is the default
-            latest_build_url = build_url + (artifact_url % short_vcs_revision)
-            # does this build even exist?
-            request = urllib2.Request(latest_build_url)
-            request.get_method = lambda: 'HEAD'
-            try:
-                urllib2.urlopen(request)
-            except urllib2.HTTPError as e:
-                if e.code == 404:
-                    continue
-            return redirect(latest_build_url)
     except urllib2.URLError, e:
         print e
+        raise e
 
-    return 'Hello World!'
+    for build in builds:
+        build_url = build["build_url"]
+        short_vcs_revision = build["vcs_revision"][:7]  # 7 is the default
+        latest_build_url = build_url + (artifact_url % short_vcs_revision)
+        # does this build even exist?
+        """
+        request = urllib2.Request(latest_build_url)
+        request.get_method = lambda: 'HEAD'
+        try:
+            urllib2.urlopen(request)
+        except urllib2.HTTPError as e:
+            if e.code == 404:
+                continue
+        """
+        try:
+            result = urlfetch.fetch(latest_build_url, follow_redirects=True, method="HEAD")
+            if result.status_code == 200:
+                return redirect(latest_build_url)
+            else:
+                print result.status_code, "Problem while querying latest_build_url!"
+                continue
+        except urlfetch.Error:
+            print 'Caught exception fetching url!'
+            continue
 
 
 @app.route('/builds')
